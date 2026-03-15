@@ -84,24 +84,32 @@
 
     // ── Config ────────────────────────────────────────────────────────────────
 
+    /**
+     * Returns the CP base URL.
+     * - If cp-url attribute is set (and not a placeholder), use it.
+     * - Otherwise (embedded inside the CP), use empty string → relative URLs.
+     */
     get _cpUrl() {
-      return (this.getAttribute('cp-url') || '').replace(/\/$/, '');
+      var attr = (this.getAttribute('cp-url') || '').replace(/\/$/, '');
+      return (attr && !attr.startsWith('__')) ? attr : '';
     }
 
-    get _username() {
-      return this.getAttribute('username') || '';
-    }
+    get _username() { return this.getAttribute('username') || ''; }
+    get _token()    { return this.getAttribute('token')    || ''; }
 
-    get _token() {
-      return this.getAttribute('token') || '';
-    }
-
-    _authHeader() {
+    /**
+     * Returns fetch options.
+     * - Embedded in CP: no Authorization header, use credentials:'include' so
+     *   the existing session cookie is forwarded automatically.
+     * - Standalone (cp-url set): Basic auth header.
+     */
+    _fetchOptions() {
+      if (!this._cpUrl) {
+        // Embedded — rely on the CP session cookie
+        return { credentials: 'include', headers: { 'Accept': 'application/json' } };
+      }
       var encoded = btoa(this._username + ':' + this._token);
-      return {
-        'Authorization': 'Basic ' + encoded,
-        'Accept': 'application/json',
-      };
+      return { headers: { 'Authorization': 'Basic ' + encoded, 'Accept': 'application/json' } };
     }
 
     // ── Rendering ────────────────────────────────────────────────────────────
@@ -289,7 +297,8 @@
     async _fetchAll() {
       if (this._isLoading) return;
 
-      if (!this._cpUrl || !this._username || !this._token) {
+      // Standalone mode requires explicit credentials
+      if (this._cpUrl && (!this._username || !this._token || this._token.startsWith('__'))) {
         this._showLoading(false);
         this.shadowRoot.getElementById('config-error').style.display = 'block';
         return;
@@ -300,13 +309,13 @@
       this._showLoading(true);
       this._hideError();
 
-      // Show which CP we're connected to
+      // Show which CP we're connected to (empty = current host)
       var cpLabel = this.shadowRoot.getElementById('cp-label');
-      if (cpLabel) cpLabel.textContent = this._cpUrl.replace(/^https?:\/\//, '');
+      if (cpLabel) cpLabel.textContent = this._cpUrl ? this._cpUrl.replace(/^https?:\/\//, '') : window.location.hostname;
 
       try {
         // 1. List all stacks/projects
-        var stacksRes = await fetch(this._cpUrl + '/cc-ui/v1/stacks/', { headers: this._authHeader() });
+        var stacksRes = await fetch(this._cpUrl + '/cc-ui/v1/stacks/', this._fetchOptions());
         if (!stacksRes.ok) throw new Error('Failed to load projects (HTTP ' + stacksRes.status + ')');
         var stacks = await stacksRes.json();
         var stackNames = Array.isArray(stacks)
@@ -320,7 +329,7 @@
           try {
             var clRes = await fetch(
               this._cpUrl + '/cc-ui/v1/stacks/' + encodeURIComponent(stackName) + '/clusters-overview',
-              { headers: this._authHeader() }
+              this._fetchOptions()
             );
             if (!clRes.ok) return;
             var data = await clRes.json();
@@ -342,7 +351,7 @@
           try {
             var sRes = await fetch(
               this._cpUrl + '/cc-ui/v1/clusters/' + encodeURIComponent(env.cluster.id) + '/deployments/stats?days=30',
-              { headers: this._authHeader() }
+              this._fetchOptions()
             );
             if (sRes.ok) env.stats = await sRes.json();
           } catch (e) { /* stats optional */ }
