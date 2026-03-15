@@ -24,6 +24,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Inject config into index.html
+        env:
+          CP_URL:      ${{ vars.CONTROL_PLANE_URL }}
+          CP_USERNAME: ${{ vars.FACETS_USERNAME }}
+          CP_TOKEN:    ${{ secrets.FACETS_TOKEN }}
+        run: |
+          sed -i \
+            -e "s|__CP_URL__|${CP_URL}|g" \
+            -e "s|__CP_USERNAME__|${CP_USERNAME}|g" \
+            -e "s|__CP_TOKEN__|${CP_TOKEN}|g" \
+            index.html
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
